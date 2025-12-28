@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary-50: oklch(0.97 0.02 260);
+  --color-primary-100: oklch(0.93 0.04 260);
+  --color-primary-200: oklch(0.86 0.08 260);
+  --color-primary-300: oklch(0.76 0.12 260);
+  --color-primary-400: oklch(0.66 0.18 260);
+  --color-primary-500: oklch(0.55 0.22 260);
+  --color-primary-600: oklch(0.48 0.22 260);
+  --color-primary-700: oklch(0.40 0.20 260);
+  --color-primary-800: oklch(0.33 0.16 260);
+  --color-primary-900: oklch(0.28 0.12 260);
+  --color-primary-950: oklch(0.20 0.08 260);
+}
+
+:root {
+  --background: #0a0a0f;
+  --foreground: #fafafa;
+  --card: #111118;
+  --card-hover: #18181f;
+  --border: #27272a;
+  --border-light: #3f3f46;
+  --accent: oklch(0.55 0.22 260);
+  --accent-light: oklch(0.66 0.18 260);
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-light);
+}
+
+/* Animations */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px oklch(0.55 0.22 260 / 0.3);
+  }
+  50% {
+    box-shadow: 0 0 40px oklch(0.55 0.22 260 / 0.5);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--border) 25%,
+    var(--border-light) 50%,
+    var(--border) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
+}

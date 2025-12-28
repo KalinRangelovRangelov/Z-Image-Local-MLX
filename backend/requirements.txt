@@ -1,0 +1,10 @@
+# Z-Image Backend - MFLUX Version for Apple Silicon
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.19
+pydantic>=2.0.0
+huggingface-hub>=0.20.0
+Pillow>=10.0.0
+websockets>=13.0
+aiofiles>=24.0.0
+mflux>=0.13.0
