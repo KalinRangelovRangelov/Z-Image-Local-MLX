@@ -8,11 +8,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from PIL import Image
 
 from .config import (
     AVAILABLE_MODELS,
@@ -22,6 +23,7 @@ from .config import (
     DEFAULT_WIDTH,
     DEVICE,
     OUTPUTS_DIR,
+    UPLOADS_DIR,
 )
 from .model_manager import ModelState, model_manager
 
@@ -338,6 +340,135 @@ async def generate_image(request: GenerationRequest):
     except Exception as e:
         import traceback
         traceback.print_exc()
+        await broadcast_message({
+            "type": "generation_error",
+            "error": str(e),
+        })
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/generate/img2img")
+async def generate_img2img(
+    prompt: str = Form(...),
+    image: UploadFile = File(...),
+    model_id: str = Form(default="z-image-turbo-4bit"),
+    num_inference_steps: int = Form(default=DEFAULT_STEPS),
+    image_strength: float = Form(default=0.7),
+    seed: Optional[int] = Form(default=None),
+):
+    """Generate an image from a reference image and prompt."""
+    # Check if model is ready
+    if not model_manager.is_model_ready(model_id):
+        status = model_manager.get_model_status(model_id)
+        if status:
+            if status.state == ModelState.NOT_DOWNLOADED:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Model {model_id} is not downloaded. Please load it first."
+                )
+            elif status.state == ModelState.LOADING:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Model {model_id} is still loading."
+                )
+            elif status.state == ModelState.ERROR:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Model {model_id} has an error: {status.error}"
+                )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model {model_id} is not ready."
+        )
+
+    # Save uploaded image temporarily
+    upload_id = str(uuid.uuid4())
+    upload_path = UPLOADS_DIR / f"{upload_id}.png"
+
+    try:
+        # Read and save uploaded image
+        contents = await image.read()
+        pil_image = Image.open(io.BytesIO(contents))
+        pil_image.save(str(upload_path))
+
+        # Get dimensions from uploaded image
+        width, height = pil_image.size
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid image: {str(e)}")
+
+    # Broadcast generation start
+    await broadcast_message({
+        "type": "generation_start",
+        "prompt": prompt,
+        "model_id": model_id,
+    })
+
+    try:
+        import time
+        start_time = time.time()
+
+        # Generate image using MFLUX with reference image
+        loop = asyncio.get_event_loop()
+        result_image, result_seed = await loop.run_in_executor(
+            None,
+            lambda: model_manager.generate_image(
+                model_id=model_id,
+                prompt=prompt,
+                width=width,
+                height=height,
+                steps=num_inference_steps,
+                guidance=0.0,
+                seed=seed,
+                image_path=str(upload_path),
+                image_strength=image_strength,
+            )
+        )
+
+        generation_time = time.time() - start_time
+
+        # Save generated image
+        image_id = str(uuid.uuid4())
+        image_filename = f"{image_id}.png"
+        output_path = OUTPUTS_DIR / image_filename
+        result_image.save(str(output_path))
+
+        # Convert to base64
+        buffer = io.BytesIO()
+        result_image.save(buffer, format="PNG")
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+
+        # Clean up uploaded file
+        upload_path.unlink(missing_ok=True)
+
+        response = GenerationResponse(
+            image_id=image_id,
+            image_url=f"/api/images/{image_id}",
+            image_base64=image_base64,
+            prompt=prompt,
+            model_id=model_id,
+            width=width,
+            height=height,
+            seed=result_seed,
+            generation_time=generation_time,
+        )
+
+        # Broadcast generation complete
+        await broadcast_message({
+            "type": "generation_complete",
+            "image_id": image_id,
+            "prompt": prompt,
+            "generation_time": generation_time,
+        })
+
+        return response
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        # Clean up uploaded file on error
+        upload_path.unlink(missing_ok=True)
         await broadcast_message({
             "type": "generation_error",
             "error": str(e),

@@ -5,10 +5,12 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.parent
 MODELS_DIR = BASE_DIR / "models"
 OUTPUTS_DIR = BASE_DIR / "outputs"
+UPLOADS_DIR = BASE_DIR / "uploads"
 
 # Create directories if they don't exist
 MODELS_DIR.mkdir(exist_ok=True)
 OUTPUTS_DIR.mkdir(exist_ok=True)
+UPLOADS_DIR.mkdir(exist_ok=True)
 
 # Available models - MFLUX versions for Apple Silicon
 AVAILABLE_MODELS = {

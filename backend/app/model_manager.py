@@ -201,8 +201,21 @@ class ModelManager:
         return self.pipelines.get(model_id)
 
     def generate_image(self, model_id: str, prompt: str, width: int, height: int,
-                       steps: int, guidance: float, seed: Optional[int] = None):
-        """Generate an image using MFLUX Z-Image Turbo."""
+                       steps: int, guidance: float, seed: Optional[int] = None,
+                       image_path: Optional[str] = None, image_strength: Optional[float] = None):
+        """Generate an image using MFLUX Z-Image Turbo.
+
+        Args:
+            model_id: ID of the model to use
+            prompt: Text prompt for generation
+            width: Output image width
+            height: Output image height
+            steps: Number of inference steps
+            guidance: Guidance scale (not used for Z-Image Turbo)
+            seed: Random seed for reproducibility
+            image_path: Path to reference image for img2img
+            image_strength: How much to modify the reference (0=keep original, 1=fully regenerate)
+        """
         pipeline = self.pipelines.get(model_id)
         if pipeline is None:
             raise RuntimeError(f"Model {model_id} is not loaded")
@@ -211,7 +224,10 @@ class ModelManager:
         if seed is None:
             seed = random.randint(0, 2**32 - 1)
 
-        print(f"[Z-Image] Generating image: {prompt[:50]}... (seed={seed})")
+        if image_path:
+            print(f"[Z-Image] Img2Img: {prompt[:50]}... (strength={image_strength}, seed={seed})")
+        else:
+            print(f"[Z-Image] Generating image: {prompt[:50]}... (seed={seed})")
 
         # Generate image - returns a GeneratedImage object
         result = pipeline.generate_image(
@@ -220,6 +236,8 @@ class ModelManager:
             num_inference_steps=steps,
             height=height,
             width=width,
+            image_path=image_path,
+            image_strength=image_strength,
         )
 
         # Return the PIL image from the GeneratedImage wrapper

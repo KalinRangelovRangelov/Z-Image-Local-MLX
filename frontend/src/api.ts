@@ -66,6 +66,39 @@ class ApiClient {
     });
   }
 
+  async generateImg2Img(
+    prompt: string,
+    image: File,
+    options: {
+      model_id?: string;
+      num_inference_steps?: number;
+      image_strength?: number;
+      seed?: number;
+    } = {}
+  ): Promise<GeneratedImage> {
+    const formData = new FormData();
+    formData.append("prompt", prompt);
+    formData.append("image", image);
+    if (options.model_id) formData.append("model_id", options.model_id);
+    if (options.num_inference_steps !== undefined)
+      formData.append("num_inference_steps", options.num_inference_steps.toString());
+    if (options.image_strength !== undefined)
+      formData.append("image_strength", options.image_strength.toString());
+    if (options.seed !== undefined) formData.append("seed", options.seed.toString());
+
+    const response = await fetch(`${this.baseUrl}/api/generate/img2img`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "Unknown error" }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
+
   async getImages(): Promise<{ images: ImageInfo[] }> {
     return this.request<{ images: ImageInfo[] }>("/api/images");
   }

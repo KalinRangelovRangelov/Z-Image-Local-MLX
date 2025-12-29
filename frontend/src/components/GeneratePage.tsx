@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   Sparkles,
   Settings2,
@@ -12,6 +12,8 @@ import {
   Trash2,
   Clock,
   Maximize2,
+  Upload,
+  X,
 } from "lucide-react";
 import { useStore } from "../store";
 import { api } from "../api";
@@ -132,6 +134,8 @@ function ImageModal({ image, onClose }: ImageModalProps) {
   );
 }
 
+type GenerationMode = "txt2img" | "img2img";
+
 export function GeneratePage() {
   const {
     models,
@@ -148,36 +152,75 @@ export function GeneratePage() {
     setCurrentView,
   } = useStore();
 
+  const [mode, setMode] = useState<GenerationMode>("txt2img");
   const [showSettings, setShowSettings] = useState(false);
   const [width, setWidth] = useState(1024);
   const [height, setHeight] = useState(1024);
-  const [steps, setSteps] = useState(9);
+  const [steps, setSteps] = useState(8);
   const [guidance, setGuidance] = useState(0.0);
   const [seed, setSeed] = useState<string>("");
   const [negativePrompt, setNegativePrompt] = useState("");
   const [selectedImage, setSelectedImage] = useState<GeneratedImage | null>(null);
   const [showModelSelect, setShowModelSelect] = useState(false);
 
+  // Img2img state
+  const [referenceImage, setReferenceImage] = useState<File | null>(null);
+  const [referencePreview, setReferencePreview] = useState<string | null>(null);
+  const [imageStrength, setImageStrength] = useState(0.7);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const selectedModel = models.find((m) => m.id === selectedModelId);
   const readyModels = models.filter((m) => m.state === "ready");
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setReferenceImage(file);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setReferencePreview(event.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveReference = () => {
+    setReferenceImage(null);
+    setReferencePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
   const handleGenerate = useCallback(async () => {
     if (!currentPrompt.trim() || !selectedModelId || isGenerating) return;
+    if (mode === "img2img" && !referenceImage) return;
 
     setGenerating(true);
     setGenerationError(null);
 
     try {
-      const result = await api.generateImage({
-        prompt: currentPrompt,
-        model_id: selectedModelId,
-        width,
-        height,
-        num_inference_steps: steps,
-        guidance_scale: guidance,
-        seed: seed ? parseInt(seed) : undefined,
-        negative_prompt: negativePrompt || undefined,
-      });
+      let result: GeneratedImage;
+
+      if (mode === "img2img" && referenceImage) {
+        result = await api.generateImg2Img(currentPrompt, referenceImage, {
+          model_id: selectedModelId,
+          num_inference_steps: steps,
+          image_strength: imageStrength,
+          seed: seed ? parseInt(seed) : undefined,
+        });
+      } else {
+        result = await api.generateImage({
+          prompt: currentPrompt,
+          model_id: selectedModelId,
+          width,
+          height,
+          num_inference_steps: steps,
+          guidance_scale: guidance,
+          seed: seed ? parseInt(seed) : undefined,
+          negative_prompt: negativePrompt || undefined,
+        });
+      }
 
       addGeneratedImage(result);
     } catch (err) {
@@ -189,12 +232,15 @@ export function GeneratePage() {
     currentPrompt,
     selectedModelId,
     isGenerating,
+    mode,
+    referenceImage,
     width,
     height,
     steps,
     guidance,
     seed,
     negativePrompt,
+    imageStrength,
     setGenerating,
     setGenerationError,
     addGeneratedImage,
@@ -209,6 +255,12 @@ export function GeneratePage() {
   const handleDeleteImage = (imageId: string) => {
     api.deleteImage(imageId).catch(console.error);
   };
+
+  const canGenerate =
+    currentPrompt.trim() &&
+    !isGenerating &&
+    selectedModelId &&
+    (mode === "txt2img" || referenceImage);
 
   return (
     <div className="min-h-screen bg-[var(--background)] flex">
@@ -283,6 +335,32 @@ export function GeneratePage() {
           <div className="flex items-center gap-4">
             <h1 className="text-xl font-semibold">Generate</h1>
 
+            {/* Mode toggle */}
+            <div className="flex rounded-lg bg-zinc-800 p-1">
+              <button
+                onClick={() => setMode("txt2img")}
+                className={clsx(
+                  "px-3 py-1 rounded-md text-sm transition-colors",
+                  mode === "txt2img"
+                    ? "bg-primary-600 text-white"
+                    : "text-zinc-400 hover:text-white"
+                )}
+              >
+                Text to Image
+              </button>
+              <button
+                onClick={() => setMode("img2img")}
+                className={clsx(
+                  "px-3 py-1 rounded-md text-sm transition-colors",
+                  mode === "img2img"
+                    ? "bg-primary-600 text-white"
+                    : "text-zinc-400 hover:text-white"
+                )}
+              >
+                Image to Image
+              </button>
+            </div>
+
             {/* Model selector */}
             <div className="relative">
               <button
@@ -344,52 +422,62 @@ export function GeneratePage() {
         {showSettings && (
           <div className="p-4 border-b border-[var(--border)] bg-[var(--card)] animate-fade-in">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-xs text-zinc-500 mb-1">Width</label>
-                <input
-                  type="number"
-                  value={width}
-                  onChange={(e) => setWidth(parseInt(e.target.value) || 1024)}
-                  min={256}
-                  max={2048}
-                  step={64}
-                  className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-[var(--border)] focus:border-primary-500 focus:outline-none text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-zinc-500 mb-1">Height</label>
-                <input
-                  type="number"
-                  value={height}
-                  onChange={(e) => setHeight(parseInt(e.target.value) || 1024)}
-                  min={256}
-                  max={2048}
-                  step={64}
-                  className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-[var(--border)] focus:border-primary-500 focus:outline-none text-sm"
-                />
-              </div>
+              {mode === "txt2img" && (
+                <>
+                  <div>
+                    <label className="block text-xs text-zinc-500 mb-1">Width</label>
+                    <input
+                      type="number"
+                      value={width}
+                      onChange={(e) => setWidth(parseInt(e.target.value) || 1024)}
+                      min={256}
+                      max={2048}
+                      step={64}
+                      className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-[var(--border)] focus:border-primary-500 focus:outline-none text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-zinc-500 mb-1">Height</label>
+                    <input
+                      type="number"
+                      value={height}
+                      onChange={(e) => setHeight(parseInt(e.target.value) || 1024)}
+                      min={256}
+                      max={2048}
+                      step={64}
+                      className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-[var(--border)] focus:border-primary-500 focus:outline-none text-sm"
+                    />
+                  </div>
+                </>
+              )}
+              {mode === "img2img" && (
+                <div className="md:col-span-2">
+                  <label className="block text-xs text-zinc-500 mb-1">
+                    Image Strength: {imageStrength.toFixed(2)}
+                  </label>
+                  <input
+                    type="range"
+                    value={imageStrength}
+                    onChange={(e) => setImageStrength(parseFloat(e.target.value))}
+                    min={0.1}
+                    max={1.0}
+                    step={0.05}
+                    className="w-full accent-primary-500"
+                  />
+                  <div className="flex justify-between text-xs text-zinc-500 mt-1">
+                    <span>Keep original</span>
+                    <span>Full change</span>
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="block text-xs text-zinc-500 mb-1">Steps</label>
                 <input
                   type="number"
                   value={steps}
-                  onChange={(e) => setSteps(parseInt(e.target.value) || 9)}
+                  onChange={(e) => setSteps(parseInt(e.target.value) || 8)}
                   min={1}
                   max={50}
-                  className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-[var(--border)] focus:border-primary-500 focus:outline-none text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-zinc-500 mb-1">
-                  Guidance Scale
-                </label>
-                <input
-                  type="number"
-                  value={guidance}
-                  onChange={(e) => setGuidance(parseFloat(e.target.value) || 0)}
-                  min={0}
-                  max={20}
-                  step={0.5}
                   className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-[var(--border)] focus:border-primary-500 focus:outline-none text-sm"
                 />
               </div>
@@ -405,24 +493,82 @@ export function GeneratePage() {
                   className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-[var(--border)] focus:border-primary-500 focus:outline-none text-sm"
                 />
               </div>
-              <div className="md:col-span-3">
-                <label className="block text-xs text-zinc-500 mb-1">
-                  Negative Prompt (optional)
-                </label>
-                <input
-                  type="text"
-                  value={negativePrompt}
-                  onChange={(e) => setNegativePrompt(e.target.value)}
-                  placeholder="What to avoid..."
-                  className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-[var(--border)] focus:border-primary-500 focus:outline-none text-sm"
-                />
-              </div>
+              {mode === "txt2img" && (
+                <>
+                  <div>
+                    <label className="block text-xs text-zinc-500 mb-1">
+                      Guidance Scale
+                    </label>
+                    <input
+                      type="number"
+                      value={guidance}
+                      onChange={(e) => setGuidance(parseFloat(e.target.value) || 0)}
+                      min={0}
+                      max={20}
+                      step={0.5}
+                      className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-[var(--border)] focus:border-primary-500 focus:outline-none text-sm"
+                    />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block text-xs text-zinc-500 mb-1">
+                      Negative Prompt (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={negativePrompt}
+                      onChange={(e) => setNegativePrompt(e.target.value)}
+                      placeholder="What to avoid..."
+                      className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-[var(--border)] focus:border-primary-500 focus:outline-none text-sm"
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
 
         {/* Main content */}
         <div className="flex-1 flex flex-col items-center justify-center p-8">
+          {/* Image upload for img2img */}
+          {mode === "img2img" && (
+            <div className="w-full max-w-2xl mb-4">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleImageSelect}
+                className="hidden"
+              />
+              {referencePreview ? (
+                <div className="relative rounded-xl overflow-hidden border border-[var(--border)] bg-[var(--card)]">
+                  <img
+                    src={referencePreview}
+                    alt="Reference"
+                    className="w-full max-h-64 object-contain"
+                  />
+                  <button
+                    onClick={handleRemoveReference}
+                    className="absolute top-2 right-2 p-2 rounded-lg bg-black/50 hover:bg-black/70 transition-colors"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <div className="absolute bottom-2 left-2 px-2 py-1 rounded bg-black/50 text-xs">
+                    Reference Image
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-12 rounded-xl border-2 border-dashed border-[var(--border)] hover:border-primary-500 transition-colors flex flex-col items-center justify-center gap-2 text-zinc-400 hover:text-white"
+                >
+                  <Upload className="h-8 w-8" />
+                  <span>Upload reference image</span>
+                  <span className="text-xs text-zinc-500">Click or drag & drop</span>
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Latest generated image or placeholder */}
           <div className="w-full max-w-2xl aspect-square rounded-2xl bg-[var(--card)] border border-[var(--border)] mb-8 overflow-hidden flex items-center justify-center">
             {isGenerating ? (
@@ -443,7 +589,9 @@ export function GeneratePage() {
                 <Sparkles className="h-16 w-16 text-zinc-600 mx-auto mb-4" />
                 <p className="text-zinc-400">Your image will appear here</p>
                 <p className="text-zinc-500 text-sm mt-1">
-                  Enter a prompt and click Generate
+                  {mode === "img2img"
+                    ? "Upload an image and enter a prompt"
+                    : "Enter a prompt and click Generate"}
                 </p>
               </div>
             )}
@@ -463,16 +611,20 @@ export function GeneratePage() {
                 value={currentPrompt}
                 onChange={(e) => setCurrentPrompt(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Describe the image you want to create..."
+                placeholder={
+                  mode === "img2img"
+                    ? "Describe how to modify the image..."
+                    : "Describe the image you want to create..."
+                }
                 rows={3}
                 className="w-full px-4 py-3 pr-24 rounded-xl bg-[var(--card)] border border-[var(--border)] focus:border-primary-500 focus:outline-none resize-none text-base"
               />
               <button
                 onClick={handleGenerate}
-                disabled={!currentPrompt.trim() || isGenerating || !selectedModelId}
+                disabled={!canGenerate}
                 className={clsx(
                   "absolute right-2 bottom-2 flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all",
-                  currentPrompt.trim() && !isGenerating && selectedModelId
+                  canGenerate
                     ? "bg-primary-600 hover:bg-primary-500 text-white"
                     : "bg-zinc-700 text-zinc-400 cursor-not-allowed"
                 )}
